@@ -1,8 +1,7 @@
 import base64
 import logging
-from base64 import b64encode
-from optparse import Option
 from typing import Optional
+import json
 
 from mcp_server_tos.config import TosConfig
 from mcp_server_tos.resources.service import TosResource
@@ -162,6 +161,193 @@ class ObjectResource(TosResource):
                     return base64.b64encode(content).decode()
             else:
                 raise Exception(f"get video snapshot failed, tos server return: {response.json()}")
+        finally:
+            if response is not None:
+                await response.aclose()
+
+
+    async def text_to_image(self, task_type: str, input_data_source: dict, output_processing: dict, ai_model_config: dict):
+        """
+        调用 TOS TextToImage 接口，使用文生图模型生成图片
+        api: Refer to info.md for detailed documentation
+        Args:
+            task_type: 任务类型，取值为 text_to_image
+            input_data_source: 文生图模型提示词，包含 Prompt 字段
+            input_processing: 图片前处理配置, 包含 "ProcessStyle" 和 "ProcessActions" 字段
+            output_processing: 图片后处理和存储配置, 包含 "Bucket" and "Object" and "ForbiddenOverwrite"
+            and "ProcessStyle" and "ProcessActions" fields
+            model_config: 文生图模型配置, 包含 "ModelAction" and "ModelVersion" and "ReqJson" fields
+        Returns:
+            文生图模型的响应结果
+        """
+        # 构造请求参数
+        request_body = {
+            "TaskType": task_type,
+            "InputDataSource": input_data_source,
+            "OutputProcessing": output_processing,
+            "ModelConfig": ai_model_config
+        }
+
+        # 调用 TOS TextToImage 接口，使用 aigc/text_to_image 处理参数
+        response = None
+        try:
+            # 注意：此处的请求需要使用特殊的查询参数 x-tos-process=aigc/text_to_image
+            response = await self.post(
+                bucket=output_processing.get("Bucket"),
+                key="",
+                params={"x-tos-process": "aigc/text_to_image"},
+                data=json.dumps(request_body)
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"TextToImage failed, tos server return: {response.json()}")
+        finally:
+            if response is not None:
+                await response.aclose()
+
+    async def image_to_image(self, source_bucket: str, task_type: str, input_data_source: dict, input_processing: dict,
+                             output_processing: dict, ai_model_config: dict):
+        """
+        调用 TOS ImageToImage 接口，使用图生图模型生成图片
+        api: Refer to info.md for detailed documentation
+        Args:
+            task_type: 任务类型，取值为 image_to_image
+            input_data_source: 图生图模型输入，包含 Prompt 和 ImageUri 字段
+            input_processing: 图片前处理配置, 包含 "ProcessStyle" 和 "ProcessActions" 字段
+            output_processing: 图片后处理和存储配置, 包含 "Bucket" and "Object" and "ForbiddenOverwrite"
+            and "ProcessStyle" and "ProcessActions" fields
+            model_config: 图生图模型配置, 包含 "ModelAction" and "ModelVersion" and "ReqJson" fields
+        Returns:
+            图生图模型的响应结果
+        """
+        # 构造请求参数
+        request_body = {
+            "TaskType": task_type,
+            "InputDataSource": input_data_source,
+            "InputProcessing": input_processing,
+            "OutputProcessing": output_processing,
+            "ModelConfig": ai_model_config
+        }
+
+        # 调用 TOS ImageToImage 接口，使用 aigc/image_to_image 处理参数
+        response = None
+        try:
+            response = await self.post(
+                bucket=source_bucket,
+                key="",
+                params={"x-tos-process": "aigc/image_to_image"},
+                data=json.dumps(request_body)
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"ImageToImage failed, tos server return: {response.json()}")
+        finally:
+            if response is not None:
+                await response.aclose()
+
+
+    async def image_understanding(self, bucket: str, key: str, model: str, prompt: str, detail: Optional[str] = None):
+        """
+        调用 TOS ImageUnderstanding 接口，对图片内容进行理解
+        api: Refer to info.md for detailed documentation
+        Args:
+            bucket: 存储桶名称
+            key: 图片对象的键
+            model: 模型名称，如 doubao-seed-1.6-vision
+            prompt: 提示词，用于指导图片理解的内容, 长度限制 1024
+            detail: 控制理解精细度，可选值：auto, low, high，默认 auto
+        Returns:
+            图片理解的响应结果（JSON格式）
+        """
+        # 构造 x-tos-process 查询参数
+        process_params = ["image/understanding"]
+
+        if model:
+            import base64
+            # 对模型名称进行 base64 URL 编码
+            encoded_model = base64.urlsafe_b64encode(model.encode('utf-8')).decode('ascii').rstrip('=')
+            process_params.append(f"m_{encoded_model}")
+
+        if prompt:
+            import base64
+            # 对提示词进行 base64 URL 编码
+            encoded_prompt = base64.urlsafe_b64encode(prompt.encode('utf-8')).decode('ascii').rstrip('=')
+            process_params.append(f"p_{encoded_prompt}")
+
+        if detail and detail in ["auto", "low", "high"]:
+            process_params.append(f"d_{detail}")
+
+        process_str = ','.join(process_params)
+
+        # 调用 GET 请求，使用 x-tos-process 查询参数
+        response = None
+        try:
+            response = await self.get(
+                bucket=bucket,
+                key=key,
+                params={"x-tos-process": process_str}
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"ImageUnderstanding failed, tos server return: {response.json()}")
+        finally:
+            if response is not None:
+                await response.aclose()
+
+
+    async def video_understanding(self, bucket: str, key: str, prompt: str,
+                                model: Optional[str] = None, fps: Optional[float] = None):
+        """
+        调用 TOS VideoUnderstanding 接口，对视频内容进行理解
+        api: Refer to info.md for detailed documentation
+        Args:
+            bucket: 存储桶名称
+            key: 视频对象的键
+            prompt: 提示词，用于指导视频理解的内容, 长度限制 1024
+            model: 模型名称，如 doubao-seed-1.6-vision，可选
+            fps: 每秒截多少帧，作为时序帧信息输入视频理解，取值范围 [0.2, 5]，默认 1.0，可选
+        Returns:
+            视频理解的响应结果（JSON格式）
+        """
+        # 构造 x-tos-process 查询参数
+        process_params = ["video/understanding"]
+
+        if model:
+            import base64
+            # 对模型名称进行 base64 URL 编码
+            encoded_model = base64.urlsafe_b64encode(model.encode('utf-8')).decode('ascii').rstrip('=')
+            process_params.append(f"m_{encoded_model}")
+
+        if prompt:
+            import base64
+            # 对提示词进行 base64 URL 编码
+            encoded_prompt = base64.urlsafe_b64encode(prompt.encode('utf-8')).decode('ascii').rstrip('=')
+            process_params.append(f"p_{encoded_prompt}")
+
+        if fps and 0.2 <= fps <= 5.0:
+            process_params.append(f"fps_{fps}")
+
+        process_str = ','.join(process_params)
+
+        # 调用 GET 请求，使用 x-tos-process 查询参数
+        response = None
+        try:
+            response = await self.get(
+                bucket=bucket,
+                key=key,
+                params={"x-tos-process": process_str}
+            )
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"VideoUnderstanding failed, tos server return: {response.json()}")
         finally:
             if response is not None:
                 await response.aclose()

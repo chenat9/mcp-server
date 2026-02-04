@@ -86,6 +86,45 @@ class TosResource:
                 else:
                     raise Exception(f"Failed after 3 retries for {bucket}/{key}")
 
+    async def post(self, bucket: str, key: str = None, headers: Dict[str, str] = None,
+                   params: Dict[str, str] = None, data=None):
+        if key is not None and len(key) != 0:
+            _is_valid_object_name(key)
+
+        if self.client is None:
+            raise exceptions.TosClientError("TosClient is not initialized")
+
+        if headers is None:
+            headers = {"User-Agent": self.user_agent}
+        else:
+            headers["User-Agent"] = self.user_agent
+
+        # 通过变量赋值,防止动态调整 auth endpoint 出现并发问题
+        sign_out = self.client.pre_signed_url(HttpMethodType.Http_Method_Post, bucket, key, 3600, headers, params)
+        attempt = 0
+        while attempt < 3:
+            try:
+                response = await _global_client.post(sign_out.signed_url, follow_redirects=False,
+                                                    headers=headers, params=params, data=data,
+                                                    timeout=httpx.Timeout(connect=10, read=30, write=10, pool=10))
+                if response.status_code >= 500 or response.status_code == 429:
+                    await response.aclose()
+                    attempt += 1
+                    if attempt < 3:
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    else:
+                        raise Exception(f"Failed after 3 retries for {bucket}/{key}")
+                else:
+                    return response
+            except Exception as e:
+                attempt += 1
+                if attempt < 3:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                else:
+                    raise Exception(f"Failed after 3 retries for {bucket}/{key} for {e}")
+
 
 async def call(self, method: str, bucket: str, key: str = None, data=None, headers: Dict[str, str] = None,
                params: Dict[str, str] = None):
