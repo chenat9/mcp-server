@@ -8,7 +8,7 @@ from mcp.server.session import ServerSession
 from mcp.server.fastmcp import Context, FastMCP
 from starlette.requests import Request
 
-from mcp_server_tos.config import load_config, TosConfig, TOS_CONFIG, LOCAL_DEPLOY_MODE
+from mcp_server_tos.config import TosConfig, TOS_CONFIG, LOCAL_DEPLOY_MODE
 from mcp_server_tos.credential import Credential
 from mcp_server_tos.resources.bucket import BucketResource
 from mcp_server_tos.resources.object import ObjectResource
@@ -185,5 +185,98 @@ async def video_snapshot(bucket_name: str, key: str, time: Optional[int] = None,
         content = await tos_resource.video_snapshot(bucket_name, key, time, width, height, mode, output_format,
                                                     auto_rotate, saveas_object, saveas_bucket)
         return content
+    except Exception:
+        raise
+
+@mcp.tool()
+async def text_to_image(task_type: str, input_data_source: dict, output_processing: dict, ai_model_config: dict):
+    """
+    Calls TOS TextToImage interface to generate images using AI models.
+    Args:
+        task_type: Task type, must be "text_to_image"
+        input_data_source: Input data source, contains "Prompt" field for text to image
+        output_processing: Output processing configuration, includes "Bucket" and "Object" and "ForbiddenOverwrite"
+        and "ProcessStyle" and "ProcessActions" fields
+        model_config: Model configuration for the text to image model, contains "ModelAction" and "ModelVersion"
+        and "ReqJson" fields
+    Returns:
+        Response from the text to image model
+    """
+    try:
+        config = get_tos_config()
+        tos_resource = ObjectResource(config)
+        result = await tos_resource.text_to_image(task_type, input_data_source, output_processing, ai_model_config)
+        return result
+    except Exception:
+        raise
+
+
+@mcp.tool()
+async def image_to_image(source_bucket: str, task_type: str, input_data_source: dict, input_processing: dict,
+                        output_processing: dict, ai_model_config: dict):
+    """
+    Calls TOS ImageToImage interface to generate images using AI models.
+    Args:
+        source_bucket: Source bucket name for image to image
+        task_type: Task type, must be "image_to_image"
+        input_data_source: Input data source, contains "Prompt" and "ImageUri" fields for image to image
+        input_processing: Input processing configuration, includes "ProcessStyle" and "ProcessActions" fields
+        output_processing: Output processing configuration, includes "Bucket" and "Object" and "ForbiddenOverwrite"
+        and "ProcessStyle" and "ProcessActions" fields
+        model_config: Model configuration for the image to image model, contains "ModelAction" and "ModelVersion"
+        and "ReqJson" fields
+    Returns:
+        Response from the image to image model
+    """
+    try:
+        config = get_tos_config()
+        tos_resource = ObjectResource(config)
+        result = await tos_resource.image_to_image(source_bucket, task_type, input_data_source, input_processing,
+                                                output_processing, ai_model_config)
+        return result
+    except Exception:
+        raise
+
+
+@mcp.tool()
+async def image_understanding(bucket: str, key: str, model: str, prompt: str, detail: Optional[str] = None):
+    """
+    Calls TOS ImageUnderstanding interface to understand image content.
+    Args:
+        bucket: The name of the bucket containing the image.
+        key: The key of the image object.
+        model: Model name for image understanding, e.g., "doubao-seed-1.6-vision"
+        prompt: Prompt text to guide image understanding, length limit 1024
+        detail: Control the detail level of image understanding. Optional values: "auto" (default), "low", "high"
+    Returns:
+        Response from the image understanding model (JSON format)
+    """
+    try:
+        config = get_tos_config()
+        tos_resource = ObjectResource(config)
+        result = await tos_resource.image_understanding(bucket, key, model, prompt, detail)
+        return result
+    except Exception:
+        raise
+
+
+@mcp.tool()
+async def video_understanding(bucket: str, key: str, prompt: str, model: Optional[str] = None, fps: Optional[float] = None):
+    """
+    Calls TOS VideoUnderstanding interface to understand video content.
+    Args:
+        bucket: The name of the bucket containing the video.
+        key: The key of the video object.
+        prompt: Prompt text to guide video understanding, length limit 1024
+        model: Model name for video understanding, e.g., "doubao-seed-1.6-vision" (optional)
+        fps: Frames per second for temporal frame extraction, range [0.2, 5], default 1.0 (optional)
+    Returns:
+        Response from the video understanding model (JSON format)
+    """
+    try:
+        config = get_tos_config()
+        tos_resource = ObjectResource(config)
+        result = await tos_resource.video_understanding(bucket, key, prompt, model, fps)
+        return result
     except Exception:
         raise
